@@ -1,0 +1,27 @@
+---
+resources:
+  - name: repo
+    type: git
+    source:
+      uri: https://github.com/Phr4sY/test_cicd
+      branch: main
+
+jobs:
+  - name: validate-endpoint
+    plan:
+      - get: repo
+        trigger: true
+      - task: check-json-endpoint
+        file: repo/tasks/check-endpoint.yml
+
+  - name: deploy-app
+    plan:
+      - get: repo
+        trigger: true
+        passed: [validate-endpoint]
+      - task: deploy
+        file: repo/tasks/deploy.yml
+        params:
+          DEPLOY_URL: ((deploy_url))
+          DEPLOY_TOKEN: ((deploy_token))
+          APP_VERSION: ((app_version))

@@ -1,0 +1,19 @@
+---
+platform: linux
+
+image_resource:
+  type: registry-image
+  source:
+    repository: golang
+    tag: "1.22-alpine"
+
+inputs:
+  - name: repo
+
+run:
+  path: sh
+  args:
+    - -exc
+    - |
+      cd repo
+      go run ./cmd/check/main.go
