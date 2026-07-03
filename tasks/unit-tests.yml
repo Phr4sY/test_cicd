@@ -10,15 +10,10 @@ image_resource:
 inputs:
   - name: repo
 
-params:
-  DEPLOY_URL: ""
-  DEPLOY_TOKEN: ""
-  APP_VERSION: "latest"
-
 run:
   path: sh
   args:
     - -exc
     - |
       cd repo
-      go run ./cmd/deploy/main.go
+      go test ./...

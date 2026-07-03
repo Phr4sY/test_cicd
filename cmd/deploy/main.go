@@ -16,10 +16,12 @@ type DeployRequest struct {
 }
 
 type DeployResponse struct {
-	Status    string `json:"status"`
-	DeployID  string `json:"deployId"`
-	Message   string `json:"message"`
+	Status   string `json:"status"`
+	DeployID string `json:"deployId"`
+	Message  string `json:"message"`
 }
+
+const serviceName = "test-cicd-app"
 
 func main() {
 	deployURL := requireEnv("DEPLOY_URL")
@@ -28,54 +30,61 @@ func main() {
 
 	fmt.Printf("Deploying service version %q to %s\n", appVersion, deployURL)
 
-	payload := DeployRequest{
-		Version: appVersion,
-		Service: "test-cicd-app",
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	msg, err := deploy(client, deployURL, deployToken, appVersion)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
 	}
+
+	fmt.Println(msg)
+}
+
+// deploy POSTs a deploy request to baseURL+"/deploy" and interprets the
+// response. It returns a human-readable success message, or an error for a
+// transport failure, a >=400 status, or a body reporting {"status":"failed"}.
+func deploy(client *http.Client, baseURL, token, version string) (string, error) {
+	payload := DeployRequest{Version: version, Service: serviceName}
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		fatalf("failed to marshal deploy request: %v", err)
+		return "", fmt.Errorf("failed to marshal deploy request: %w", err)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
-
-	req, err := http.NewRequest(http.MethodPost, deployURL+"/deploy", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/deploy", bytes.NewReader(body))
 	if err != nil {
-		fatalf("failed to build request: %v", err)
+		return "", fmt.Errorf("failed to build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+deployToken)
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		fatalf("deploy request failed: %v", err)
+		return "", fmt.Errorf("deploy request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fatalf("failed to read deploy response: %v", err)
+		return "", fmt.Errorf("failed to read deploy response: %w", err)
 	}
 
 	if resp.StatusCode >= 400 {
-		fmt.Fprintf(os.Stderr, "FAIL: deploy returned HTTP %d: %s\n", resp.StatusCode, string(respBody))
-		os.Exit(1)
+		return "", fmt.Errorf("deploy returned HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	var result DeployResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		// Not all APIs return structured JSON — treat a 2xx as success.
-		fmt.Printf("OK: deploy succeeded (HTTP %d)\n", resp.StatusCode)
-		return
+		// Not all APIs return structured JSON — treat any 2xx as success.
+		return fmt.Sprintf("OK: deploy succeeded (HTTP %d)", resp.StatusCode), nil
 	}
 
 	if result.Status == "failed" {
-		fmt.Fprintf(os.Stderr, "FAIL: deploy reported failure: %s\n", result.Message)
-		os.Exit(1)
+		return "", fmt.Errorf("deploy reported failure: %s", result.Message)
 	}
 
-	fmt.Printf("OK: deploy succeeded — ID: %s, message: %s\n", result.DeployID, result.Message)
+	return fmt.Sprintf("OK: deploy succeeded — ID: %s, message: %s", result.DeployID, result.Message), nil
 }
 
 func requireEnv(key string) string {

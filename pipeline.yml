@@ -7,10 +7,18 @@ resources:
       branch: main
 
 jobs:
+  - name: unit-tests
+    plan:
+      - get: repo
+        trigger: true
+      - task: run-tests
+        file: repo/tasks/unit-tests.yml
+
   - name: validate-endpoint
     plan:
       - get: repo
         trigger: true
+        passed: [unit-tests]
       - task: check-json-endpoint
         file: repo/tasks/check-endpoint.yml
 
